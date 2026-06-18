@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account registration and global terminal preferences.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The unique user authentication ID." },
+        "email": { "type": "string", "description": "The verified email address of the account." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp." },
+        "brokerConnected": { "type": "boolean", "description": "Toggle indicating simulated broker authorization." },
+        "activeMode": { "type": "string", "enum": ["genesis", "expert"], "description": "Target intelligence output preference." }
+      },
+      "required": ["userId", "email", "createdAt", "brokerConnected"]
+    },
+    "Watchlist": {
+      "title": "Watchlist Stock",
+      "description": "Indicates a stock being tracked within the user's terminal.",
+      "type": "object",
+      "properties": {
+        "ticker": { "type": "string", "description": "Asset ticker symbol." },
+        "addedAt": { "type": "string", "format": "date-time", "description": "Tracking start timestamp." }
+      },
+      "required": ["ticker", "addedAt"]
+    },
+    "Holding": {
+      "title": "Portfolio Holding",
+      "description": "Active position allocation stored securely.",
+      "type": "object",
+      "properties": {
+        "ticker": { "type": "string", "description": "Asset ticker symbol." },
+        "shares": { "type": "number", "description": "Volume of units owned." },
+        "avgCost": { "type": "number", "description": "Mean historical execution purchase price." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Timestamp of position modification." }
+      },
+      "required": ["ticker", "shares", "avgCost", "updatedAt"]
+    },
+    "PersonalSource": {
+      "title": "Personal Intelligence Source",
+      "description": "A custom user-defined RSS/site node to scrape during research runs.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Source unique identifier." },
+        "name": { "type": "string", "description": "Display label for the site node." },
+        "type": { "type": "string", "description": "Source category or medium designation." },
+        "url": { "type": "string", "format": "uri", "description": "Target web address sync point." },
+        "addedAt": { "type": "string", "format": "date-time", "description": "Date added." }
+      },
+      "required": ["id", "name", "type", "url", "addedAt"]
+    },
+    "CommunitySignal": {
+      "title": "Community Ground Truth Signal",
+      "description": "An anonymous, verified intelligence feed contributed by licensed platform nodes.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Signal trace index." },
+        "ticker": { "type": "string", "description": "Asset ticker coordinate." },
+        "sourceUrl": { "type": "string", "format": "uri", "description": "Supporting external URL link." },
+        "textContribution": { "type": "string", "description": "Clipped text segment or log dump from sector source." },
+        "userObservation": { "type": "string", "description": "Subjective user note or brief rationale explanation." },
+        "authorEmail": { "type": "string", "description": "Contributor contact handle." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "Ingest and validation timestamp." },
+        "verified": { "type": "boolean", "description": "Verification flag indicating platform check passed." }
+      },
+      "required": ["id", "ticker", "sourceUrl", "textContribution", "userObservation", "authorEmail", "timestamp", "verified"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User configuration parameters and settings."
+    },
+    "/users/{userId}/watchlist/{ticker}": {
+      "schema": "Watchlist",
+      "description": "List of tickers marked for observation by a user."
+    },
+    "/users/{userId}/holdings/{ticker}": {
+      "schema": "Holding",
+      "description": "Secured equity share balances for custom portfolio calculations."
+    },
+    "/users/{userId}/sources/{sourceId}": {
+      "schema": "PersonalSource",
+      "description": "Custom site scrapers configured for the agent's morning run."
+    },
+    "/community_signals/{signalId}": {
+      "schema": "CommunitySignal",
+      "description": "Shared market observations contributed by system operators globally."
+    }
+  }
+}
