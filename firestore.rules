@@ -1,131 +1,39 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. Global Safety Net (Default Deny)
-    match /{document=**} {
-      allow read, write: if false;
-    }
 
-    // 2. Primative Definitions & Reusable Helpers
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isVerifiedUser() {
-      return isSignedIn() && request.auth.token.email_verified == true;
-    }
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
+    // Helper: Validate ID format and length
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id.matches('^[a-zA-Z0-9_\\-]+$') && id.size() <= 128;
     }
 
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    // 3. Entity Shape & Content Validations
-    function isValidUser(data) {
-      return data.userId == request.auth.uid
-        && data.email is string
-        && data.email.size() <= 256
-        && data.createdAt == request.time
-        && data.brokerConnected is bool
-        && (data.activeMode == "genesis" || data.activeMode == "expert");
-    }
-
-    function isValidWatchlist(data) {
-      return data.ticker is string
-        && data.ticker.size() <= 16
-        && data.addedAt == request.time;
-    }
-
-    function isValidHolding(data) {
-      return data.ticker is string
-        && data.ticker.size() <= 16
-        && data.shares is number
-        && data.shares >= 0
-        && data.avgCost is number
-        && data.avgCost >= 0
-        && data.updatedAt == request.time;
-    }
-
-    function isValidPersonalSource(data) {
-      return data.id is string
-        && data.id.size() <= 128
-        && data.name is string
-        && data.name.size() <= 128
-        && data.type is string
-        && data.type.size() <= 64
-        && data.url is string
-        && data.url.size() <= 512
-        && data.addedAt == request.time;
-    }
-
-    function isValidCommunitySignal(data) {
-      return data.id is string
-        && data.id.size() <= 128
-        && data.ticker is string
-        && data.ticker.size() <= 16
-        && data.sourceUrl is string
-        && data.sourceUrl.size() <= 2048
-        && data.textContribution is string
-        && data.textContribution.size() <= 10000
-        && data.userObservation is string
-        && data.userObservation.size() <= 2000
-        && data.authorEmail == request.auth.token.email
-        && data.timestamp == request.time
-        && data.verified == false;
-    }
-
-    // 4. Secure Match Routes
+    // 1. User Profile Rules
     match /users/{userId} {
-      allow get: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidUser(incoming());
-      allow update: if isOwner(userId) && isValidUser(incoming()) && (
-        incoming().diff(existing()).affectedKeys().hasOnly(['brokerConnected', 'activeMode'])
-      );
-      allow delete: if false;
-
+      allow get, update: if request.auth.uid == userId;
+      allow create: if request.auth.uid == request.resource.data.userId 
+                    && request.resource.data.createdAt == request.time
+                    && request.resource.data.keys().hasOnly(['userId', 'email', 'createdAt', 'brokerConnected', 'activeMode']);
+      
+      // 2. Watchlist Rules
       match /watchlist/{ticker} {
-        allow get: if isOwner(userId);
-        allow list: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(ticker) && isValidWatchlist(incoming());
-        allow delete: if isOwner(userId);
+        allow create: if request.auth.uid == userId && isValidId(ticker);
       }
 
+      // 3. Holdings Rules
       match /holdings/{ticker} {
-        allow get: if isOwner(userId);
-        allow list: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(ticker) && isValidHolding(incoming());
-        allow update: if isOwner(userId) && isValidId(ticker) && isValidHolding(incoming()) && (
-          incoming().diff(existing()).affectedKeys().hasOnly(['shares', 'avgCost', 'updatedAt'])
-        );
-        allow delete: if isOwner(userId);
-      }
-
-      match /sources/{sourceId} {
-        allow get: if isOwner(userId);
-        allow list: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(sourceId) && isValidPersonalSource(incoming());
-        allow update: if isOwner(userId) && isValidId(sourceId) && isValidPersonalSource(incoming()) && (
-          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'type', 'url', 'addedAt'])
-        );
-        allow delete: if isOwner(userId);
+        allow create: if request.auth.uid == userId 
+                      && request.resource.data.shares > 0 
+                      && request.resource.data.avgCost > 0;
       }
     }
 
+    // 4. Community Signals Rules
     match /community_signals/{signalId} {
-      allow get, list: if isSignedIn();
-      allow create: if isVerifiedUser() && isValidId(signalId) && isValidCommunitySignal(incoming());
-      allow update, delete: if false;
+      allow read: if request.auth != null;
+      allow create: if request.auth.token.email_verified == true
+                    && request.auth.token.email == request.resource.data.authorEmail
+                    && request.resource.data.verified == false;
+      allow update: if false; // Only admin SDK can set verified = true
     }
   }
 }
