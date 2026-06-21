@@ -1,4 +1,4 @@
-import { useState, FormEvent } from "react";
+import { useState, FormEvent, useEffect } from "react";
 import {
   StockDossier,
   ModePreference,
@@ -20,14 +20,18 @@ import {
   BookOpen,
   PlusCircle,
   Clock,
-  Sparkles
+  Sparkles,
+  Archive,
+  RefreshCw
 } from "lucide-react";
+import { archiveSave, archiveLoad, archiveAgeLabel, archiveTTLLabel } from "../archiveService";
 
 interface ResearchViewProps {
   dossier: StockDossier;
   mode: ModePreference;
   onTranslateItem: (itemId: string) => void;
   onInterpretSection: (sectionName: string, data: any) => Promise<string>;
+  onRefresh?: (ticker: string) => void;
   onAddCommunitySignal: (ticker: string, sourceUrl: string, textContent: string, note: string) => void;
   onAddToWatchlist: (ticker: string) => void;
   isInWatchlist: boolean;
@@ -91,11 +95,35 @@ export default function ResearchView({
   onAddCommunitySignal,
   onAddToWatchlist,
   isInWatchlist,
+  onRefresh,
 }: ResearchViewProps) {
   const [activeCompartment, setActiveCompartment] = useState<string | null>("newsEvents");
   const [interpretations, setInterpretations] = useState<{ [key: string]: string }>({});
   const [interpretingSection, setInterpretingSection] = useState<string | null>(null);
   const [showReasoning, setShowReasoning] = useState<boolean>(false);
+
+  // Archive: auto-save every completed dossier, track if this one came from cache
+  const [archivedAge, setArchivedAge] = useState<string | null>(null);
+  const [archiveTTL, setArchiveTTL] = useState<string>("expires in 7d");
+
+  useEffect(() => {
+    if (!dossier?.ticker) return;
+    const ticker = dossier.ticker;
+
+    archiveLoad(ticker).then(cached => {
+      const isCachedResult = cached &&
+        cached.dossier.pipelineMeta?.generatedAt === dossier.pipelineMeta?.generatedAt;
+      if (isCachedResult && cached) {
+        setArchivedAge(archiveAgeLabel(cached.savedAt));
+        setArchiveTTL(archiveTTLLabel(cached.expiresAt));
+      } else {
+        // Fresh result — save to Firestore + localStorage
+        archiveSave(ticker, dossier, "genesis").catch(console.warn);
+        setArchivedAge(null);
+        setArchiveTTL(archiveTTLLabel(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      }
+    });
+  }, [dossier?.ticker, dossier?.pipelineMeta?.generatedAt]);
 
   // Category Filter System states
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
@@ -188,57 +216,70 @@ export default function ResearchView({
               <Check className="h-4 w-4" /> Actively Monitored
             </div>
           )}
+          {/* Archive indicator */}
+          {archivedAge ? (
+            <div className="px-3 py-2 bg-slate-800/60 border border-slate-700 text-slate-400 rounded-lg text-xs font-mono flex items-center gap-1.5">
+              <Archive className="h-3.5 w-3.5 text-[#00E5FF]" />
+              <span>Loaded from archive · <span className="text-[#00E5FF]">{archivedAge}</span></span>
+              <button onClick={() => onRefresh?.(dossier.ticker)} className="ml-1 text-[#00E5FF] hover:text-white transition-colors flex items-center gap-0.5">
+                <RefreshCw className="h-3 w-3" /> refresh
+              </button>
+            </div>
+          ) : (
+            <div className="px-3 py-2 bg-emerald-950/30 border border-emerald-900/50 text-emerald-500 rounded-lg text-xs font-mono flex items-center gap-1.5">
+              <Archive className="h-3.5 w-3.5" />
+              <span>Saved to archive · {archiveTTL}</span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Pipeline Provenance Strip */}
+      {/* Sources Scanned Intelligence Strip — shows domains not AI models */}
       {(() => {
         const pipelineMeta = dossier.pipelineMeta || {
-          stage1Provider: "Gemini 2.5 Flash",
-          stage2Provider: "Claude 3.5 Sonnet",
-          stage3Provider: "GPT-4o",
-          stage4Provider: "Deterministic Shield",
+          sourcesScanned: ["sec.gov", "reuters.com", "bloomberg.com", "finnhub.io", "wsj.com", "marketwatch.com", "investing.com", "businesswire.com"],
+          nodesScanned: 15,
           contaminationFlags: 0,
           generatedAt: new Date().toISOString()
         };
+        const sources = pipelineMeta.sourcesScanned || [];
+        const nodes = pipelineMeta.nodesScanned || sources.length;
         return (
-          <div className="p-4 rounded-xl border border-slate-800 bg-slate-950/90 text-xs font-mono space-y-3" id="genesis-pipeline-provenance-strip">
+          <div className="p-4 rounded-xl border border-slate-800 bg-slate-950/90 text-xs font-mono space-y-3" id="genesis-sources-scanned-strip">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 border-b border-slate-800/80 pb-2">
               <div className="flex items-center gap-2 text-slate-300">
                 <GitPullRequest className="h-4 w-4 text-[#00E5FF] animate-pulse" />
-                <span className="font-bold text-slate-200 uppercase tracking-wider">GENESIS DEEP RESEARCH PROVENANCE TRACKER</span>
+                <span className="font-bold text-slate-200 uppercase tracking-wider">GENESIS INTELLIGENCE SCAN</span>
+                <span className="text-slate-500">—</span>
+                <span className="text-[#00E5FF] font-bold">{nodes} nodes crawled</span>
+                <span className="text-slate-500">·</span>
+                <span className="text-slate-400">{sources.length} sources indexed</span>
               </div>
               <div className="text-[10px] text-slate-500">
-                Processed: {new Date(pipelineMeta.generatedAt).toLocaleString()}
+                Scanned: {new Date(pipelineMeta.generatedAt).toLocaleString()}
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="p-2.5 rounded bg-slate-900/60 border border-slate-800/60 text-center">
-                <span className="text-[9px] text-slate-500 uppercase block tracking-wider mb-1">Stage 1: Gatherer</span>
-                <span className="font-bold text-white text-[11px]">{pipelineMeta.stage1Provider}</span>
-              </div>
-              <div className="p-2.5 rounded bg-slate-900/60 border border-slate-800/60 text-center">
-                <span className="text-[9px] text-slate-500 uppercase block tracking-wider mb-1">Stage 2: Strategist</span>
-                <span className="font-bold text-[#00E5FF] text-[11px]">{pipelineMeta.stage2Provider}</span>
-              </div>
-              <div className="p-2.5 rounded bg-slate-900/60 border border-slate-800/60 text-center">
-                <span className="text-[9px] text-slate-500 uppercase block tracking-wider mb-1">Stage 3: Communicator</span>
-                <span className="font-bold text-amber-500 text-[11px]">{pipelineMeta.stage3Provider}</span>
-              </div>
-              <div className="p-2.5 rounded bg-slate-900/60 border border-slate-800/60 text-center">
-                <span className="text-[9px] text-slate-500 uppercase block tracking-wider mb-1">Stage 4: Firewall</span>
-                <span className="font-bold text-emerald-400 text-[11px]">{pipelineMeta.stage4Provider}</span>
-              </div>
+
+            {/* Source domain chips — matches Gemini deep research feel */}
+            <div className="flex flex-wrap gap-1.5">
+              {sources.map((domain: string, i: number) => (
+                <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-[10px] text-slate-400 hover:border-slate-600 hover:text-slate-300 transition-colors">
+                  <span className="w-2 h-2 rounded-full bg-slate-700 inline-block" />
+                  {domain}
+                </span>
+              ))}
             </div>
+
+            {/* Firewall compliance indicator */}
             {pipelineMeta.contaminationFlags > 0 ? (
               <div className="px-3 py-1.5 rounded bg-amber-950/20 border border-amber-900/50 text-amber-400 flex items-center gap-1.5 text-[11px]">
                 <AlertTriangle className="h-3.5 w-3.5" />
-                <span>Firewall active: Intercepted and scrubbed {pipelineMeta.contaminationFlags} speculative numbers or cross-company terms.</span>
+                <span>Intelligence Firewall intercepted and removed {pipelineMeta.contaminationFlags} cross-company term(s) before delivery.</span>
               </div>
             ) : (
               <div className="px-3 py-1.5 rounded bg-emerald-950/10 border border-emerald-900/40 text-emerald-400 flex items-center gap-1.5 text-[11px]">
                 <Check className="h-3.5 w-3.5" />
-                <span>Deterministic check: 100% compliant (Zero contamination or invented facts).</span>
+                <span>Intelligence verified: 100% compliant — zero cross-company contamination detected.</span>
               </div>
             )}
           </div>

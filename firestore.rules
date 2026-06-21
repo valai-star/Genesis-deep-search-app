@@ -2,38 +2,48 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper: Validate ID format and length
     function isValidId(id) {
       return id.matches('^[a-zA-Z0-9_\\-]+$') && id.size() <= 128;
     }
 
-    // 1. User Profile Rules
+    // ── User Profiles ────────────────────────────────────────────────────────
     match /users/{userId} {
       allow get, update: if request.auth.uid == userId;
-      allow create: if request.auth.uid == request.resource.data.userId 
+      allow create: if request.auth.uid == request.resource.data.userId
                     && request.resource.data.createdAt == request.time
-                    && request.resource.data.keys().hasOnly(['userId', 'email', 'createdAt', 'brokerConnected', 'activeMode']);
-      
-      // 2. Watchlist Rules
+                    && request.resource.data.keys().hasOnly([
+                         'userId', 'email', 'createdAt', 'brokerConnected', 'activeMode'
+                       ]);
+
       match /watchlist/{ticker} {
-        allow create: if request.auth.uid == userId && isValidId(ticker);
+        allow read, create, delete: if request.auth.uid == userId && isValidId(ticker);
       }
 
-      // 3. Holdings Rules
       match /holdings/{ticker} {
-        allow create: if request.auth.uid == userId 
-                      && request.resource.data.shares > 0 
-                      && request.resource.data.avgCost > 0;
+        allow read: if request.auth.uid == userId;
+        allow create, update: if request.auth.uid == userId
+                              && request.resource.data.shares > 0
+                              && request.resource.data.avgCost > 0;
+        allow delete: if request.auth.uid == userId;
       }
     }
 
-    // 4. Community Signals Rules
+    // ── Intelligence Archive ─────────────────────────────────────────────────
+    // Logged-in users: full read/write on their own archive (30-day TTL)
+    // Anonymous users: archive stored in localStorage only (no Firestore)
+    match /intelligence_archive/{userId}/tickers/{ticker} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId
+                         && isValidId(ticker);
+    }
+
+    // ── Community Signals ────────────────────────────────────────────────────
     match /community_signals/{signalId} {
       allow read: if request.auth != null;
       allow create: if request.auth.token.email_verified == true
                     && request.auth.token.email == request.resource.data.authorEmail
                     && request.resource.data.verified == false;
-      allow update: if false; // Only admin SDK can set verified = true
+      allow update: if false; // Admin SDK only
     }
   }
 }

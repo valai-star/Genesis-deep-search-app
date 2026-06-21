@@ -111,10 +111,8 @@ export interface ReasoningLayer {
 }
 
 export interface PipelineMeta {
-  stage1Provider: string;
-  stage2Provider: string;
-  stage3Provider: string;
-  stage4Provider: string;
+  sourcesScanned: string[];
+  nodesScanned: number;
   contaminationFlags: number;
   generatedAt: string;
 }
